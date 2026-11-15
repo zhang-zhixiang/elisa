@@ -186,6 +186,9 @@ class Settings(_Const):
     K93_ATM_TABLES: str
     MESH_GENERATOR: str
     DEFORMATION_TOL: float
+    RBF_MESH_SMOOTHING: float
+    RBF_SIGMA_SMOOTHING_PASSES: int
+    RBF_GRID_TOLERANCE: float
     PULSATION_MODEL: str
     PENALIZE_ALL_EXCEPTIONS: bool
     MCMC_DIAGNOSTICS_INTERVAL_STEPS: int
@@ -239,6 +242,9 @@ class Settings(_Const):
         "K93_ATM_TABLES",
         "MESH_GENERATOR",
         "DEFORMATION_TOL",
+        "RBF_MESH_SMOOTHING",
+        "RBF_SIGMA_SMOOTHING_PASSES",
+        "RBF_GRID_TOLERANCE",
         "PULSATION_MODEL",
         "PENALIZE_ALL_EXCEPTIONS",
         "MCMC_SAVE_INTERVAL",
@@ -409,7 +415,7 @@ class Settings(_Const):
         object.__setattr__(self, "__dict__", candidate)
 
     @staticmethod
-    def _validate_candidate(values: dict) -> None:  # noqa: C901, PLR0912
+    def _validate_candidate(values: dict) -> None:  # noqa: C901, PLR0912, PLR0915
         """Use INI types and constraints without restricting scientific modes."""
         float_fields = {
             "MAX_DISCRETIZATION_FACTOR",
@@ -463,6 +469,12 @@ class Settings(_Const):
         solvers = tuple(solver.value for solver in MeanAnomalySolver)
         if values["MEAN_ANOMALY_SOLVER"] not in solvers:
             raise_elisa_settings_error(f"MEAN_ANOMALY_SOLVER must be one of: {', '.join(solvers)}")
+        if values["RBF_MESH_SMOOTHING"] <= 0.0:
+            raise_elisa_settings_error("RBF_MESH_SMOOTHING must be greater than 0")
+        if values["RBF_SIGMA_SMOOTHING_PASSES"] < 0:
+            raise_elisa_settings_error("RBF_SIGMA_SMOOTHING_PASSES must be greater than or equal to 0")
+        if values["RBF_GRID_TOLERANCE"] < 0.0:
+            raise_elisa_settings_error("RBF_GRID_TOLERANCE must be greater than or equal to 0")
         interval = values["MCMC_DIAGNOSTICS_INTERVAL_STEPS"]
         if type(interval) is not int or interval <= 0:
             raise_elisa_settings_error("MCMC_DIAGNOSTICS_INTERVAL_STEPS must be a positive integer")
@@ -664,6 +676,18 @@ class Settings(_Const):
                 "computational",
                 "use_similar_neighbours_approximation",
                 fallback=candidate.USE_SIMILAR_NEIGHBOURS_APPROXIMATION,
+            )
+
+        # **************************************************************************************************************
+        if parser.has_section("rbf"):
+            candidate.RBF_MESH_SMOOTHING = parser.getfloat(
+                "rbf", "mesh_smoothing", fallback=candidate.RBF_MESH_SMOOTHING,
+            )
+            candidate.RBF_SIGMA_SMOOTHING_PASSES = parser.getint(
+                "rbf", "sigma_smoothing_passes", fallback=candidate.RBF_SIGMA_SMOOTHING_PASSES,
+            )
+            candidate.RBF_GRID_TOLERANCE = parser.getfloat(
+                "rbf", "grid_tolerance", fallback=candidate.RBF_GRID_TOLERANCE,
             )
 
         # **************************************************************************************************************

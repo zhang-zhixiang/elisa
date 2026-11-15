@@ -54,6 +54,15 @@ class DefaultSettings:
     MAX_CURVE_DATAPOINTS: int = 300
     MESH_GENERATOR: str = "auto"
     DEFORMATION_TOL: float = 0.05
+
+    # rotational broadening function (RBF)
+    # numerical bandwidth of the local Gaussian kernel relative to the per-face
+    # vertex spread; 1.0 keeps only the physical sub-face dispersion
+    RBF_MESH_SMOOTHING: float = 1.5
+    # neighbour-averaging passes applied to the per-face width
+    RBF_SIGMA_SMOOTHING_PASSES: int = 2
+    # tolerated fraction of visible flux outside the velocity grid
+    RBF_GRID_TOLERANCE: float = 1e-4
     MCMC_SAVE_INTERVAL: int = 1800
     MCMC_DIAGNOSTICS_INTERVAL_STEPS: int = 100
     MCMC_INITIAL_WALKER_MAX_ATTEMPTS: int = 100
