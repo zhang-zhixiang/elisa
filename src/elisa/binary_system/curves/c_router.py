@@ -41,7 +41,8 @@ def resolve_curve_method(
 
     :param system: Binary system instance.
     :type system: BinarySystem
-    :param curve: Curve selector: ``CurveType.LC`` or ``CurveType.RV``.
+    :param curve: Curve selector: ``CurveType.LC``, ``CurveType.RV`` or
+        ``CurveType.RBF``.
     :type curve: CurveType
     :return: Callable curve-calculation method.
     :rtype: Callable[..., dict[str, NDArray[Float]]]
@@ -65,10 +66,22 @@ def resolve_curve_method(
             system._compute_eccentric_spotty_rv_curve,  # noqa: SLF001
             system._compute_eccentric_rv_curve_no_spots,  # noqa: SLF001
         )
+    elif curve == CurveType.RBF:
+        # noinspection PyProtectedMember
+        fn_array = (
+            system._compute_circular_synchronous_rbf_curve,  # noqa: SLF001
+            system._compute_circular_spotty_asynchronous_rbf_curve,  # noqa: SLF001
+            system._compute_circular_pulsating_rbf_curve,  # noqa: SLF001
+            system._compute_eccentric_spotty_rbf_curve,  # noqa: SLF001
+            system._compute_eccentric_rbf_curve_no_spots,  # noqa: SLF001
+        )
     else:
-        # Internal callers must select LC or RV before entering this router;
-        # candidate parameter changes cannot introduce another curve type.
-        message = f"Invalid curve selector {curve!r}; expected CurveType.LC or CurveType.RV."
+        # Internal callers must select a supported curve type before entering
+        # this router; candidate parameter changes cannot introduce another one.
+        message = (
+            f"Invalid curve selector {curve!r}; expected CurveType.LC, "
+            "CurveType.RV or CurveType.RBF."
+        )
         raise_elisa_unexpected_error(message)
 
     is_circular = system.eccentricity == 0
@@ -350,6 +363,10 @@ def produce_ecc_curves_no_spots(
     try_to_find_appx = has_multiple_phases and c_appx_router.look_for_approximation(
         not_pulsations_test=not binary.has_pulsations(),
     )
+    if getattr(curve_fn, "force_exact", False):
+        # vector-valued curves (RBF) are not supported by the scalar
+        # approximations
+        try_to_find_appx = False
 
     args = (
         binary,

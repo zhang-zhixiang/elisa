@@ -25,6 +25,47 @@ if TYPE_CHECKING:
     from elisa.types import NP_BOOL_, Float
 
 
+def _allocate_curves(
+    crv_labels: list[str],
+    n_positions: int,
+    curve_fn: Callable[..., dict[str, NDArray[Float]]] | None = None,
+    *,
+    init: str = "zeros",
+) -> dict[str, NDArray[Float]]:
+    """Allocate a curve mapping with a shape inferred from the callback.
+
+    Light-curve and radial-velocity callbacks produce one scalar per orbital
+    position and therefore expose no ``n_outputs`` attribute.  Callbacks that
+    produce a vector per position (for example the RBF computer) expose
+    ``n_outputs``; in that case the mapping is allocated as
+    ``(n_positions, n_outputs)``.
+
+    :param crv_labels: Curve labels (passbands or component names).
+    :type crv_labels: list[str]
+    :param n_positions: Number of orbital positions in the current batch.
+    :type n_positions: int
+    :param curve_fn: Callback used to accumulate the curve.
+    :type curve_fn: Callable[..., dict[str, NDArray[Float]]] | None
+    :param init: Either ``"zeros"`` or ``"empty"``.
+    :type init: str
+    :raises ValueError: If ``init`` is not ``"zeros"`` or ``"empty"``.
+    :return: Allocated curve mapping.
+    :rtype: dict[str, NDArray[Float]]
+    """
+    if init == "zeros":
+        builder = np.zeros
+    elif init == "empty":
+        builder = np.empty
+    else:
+        msg = f"Invalid curve initializer `{init}`"
+        raise ValueError(msg)
+
+    n_outputs = int(getattr(curve_fn, "n_outputs", 1))
+    if n_outputs == 1:
+        return {key: builder(n_positions) for key in crv_labels}
+    return {key: builder((n_positions, n_outputs)) for key in crv_labels}
+
+
 def produce_circ_sync_curves_mp(
     binary: BinarySystem,
     initial_system: OrbitalPositionContainer,
@@ -62,7 +103,7 @@ def produce_circ_sync_curves_mp(
     azimuths = np.asarray([position.azimuth for position in orbital_motion], dtype=FLOAT)
     in_eclipse = dynamic.in_eclipse_test(azimuths, ecl_boundaries)
 
-    curves = {key: np.zeros(phase_batch.shape) for key in crv_labels}
+    curves = _allocate_curves(crv_labels, len(phase_batch), curves_fn, init="zeros")
 
     for pos_idx, position in enumerate(orbital_motion):
         on_pos = bsutils.move_sys_onpos(initial_system, position, on_copy=True)
@@ -132,7 +173,7 @@ def produce_circ_spotty_async_curves_mp(
     combined_reducer = primary_reducer & secondary_reducer
 
     # calculating lc with spots gradually shifting their positions in each phase
-    curves = {key: np.empty(len(motion_batch)) for key in crv_labels}
+    curves = _allocate_curves(crv_labels, len(motion_batch), curve_fn, init="empty")
     normal_radiance, ld_cfs = None, None
     for pos_idx, orbital_position in enumerate(motion_batch):
         initial_system.set_on_position_params(position=orbital_position)
@@ -241,7 +282,7 @@ def produce_circ_pulsating_curves_mp(
     azimuths = np.asarray([position.azimuth for position in orbital_motion], dtype=FLOAT)
     in_eclipse = dynamic.in_eclipse_test(azimuths, ecl_boundaries)
 
-    curves = {key: np.zeros(phase_batch.shape) for key in crv_labels}
+    curves = _allocate_curves(crv_labels, len(phase_batch), curves_fn, init="zeros")
 
     for pos_idx, position in enumerate(orbital_motion):
         on_pos = initial_system.copy()
@@ -306,7 +347,7 @@ def integrate_eccentric_curve_exactly(
     :return: Dictionary mapping each curve label to its computed values.
     :rtype: dict[str, NDArray[Float]]
     """
-    curves = {key: np.empty(len(motion_batch)) for key in crv_labels}
+    curves = _allocate_curves(crv_labels, len(motion_batch), curve_fn, init="empty")
 
     # Build the container once with a dummy position to avoid repeating the
     # expensive correct_potentials + StarContainer construction on every

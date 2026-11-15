@@ -31,6 +31,7 @@ class CurveType(Enum):
 
     LC = "lc"
     RV = "rv"
+    RBF = "rbf"
 
 
 class RVMethod(StrEnum):

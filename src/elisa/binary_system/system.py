@@ -10,6 +10,7 @@ from elisa import const, settings, utils
 from elisa import umpy as up
 from elisa import units as u
 from elisa.base.container import SystemPropertiesContainer
+from elisa.base.curves import rbf as rbf_point
 from elisa.base.curves import utils as rv_utils
 from elisa.base.error import (
     raise_elisa_max_iteration_error,
@@ -32,6 +33,7 @@ from elisa.binary_system import utils as bsutils
 from elisa.binary_system._radius_solver import RocheRay, bracket_root
 from elisa.binary_system.container import OrbitalPositionContainer
 from elisa.binary_system.curves import c_router, lc, rv
+from elisa.binary_system.curves import rbf as rbf_curves
 from elisa.binary_system.orbit import orbit
 from elisa.binary_system.surface import mesh
 from elisa.binary_system.surface.temperature import interpolate_albedo
@@ -1731,3 +1733,45 @@ class BinarySystem(System[Star]):
 
     def _compute_eccentric_rv_curve_no_spots(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
         return rv.compute_eccentric_rv_curve_no_spots(self, **kwargs)
+
+    def compute_rbf(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
+        """Compute rotational broadening functions for the binary system.
+
+        The RBF is the flux-weighted distribution of line-of-sight velocities of
+        the visible surface elements, smoothed by a local Gaussian kernel. It is
+        evaluated on the supplied uniform velocity grid for every requested
+        orbital phase.
+
+        :param kwargs: RBF computation arguments.
+
+            Supported options include:
+
+            - ``velocity_grid`` - uniform velocity grid in metres per second
+            - ``phases`` - photometric phases
+            - ``position_method`` - callable returning orbital positions
+        :type kwargs: Any
+        :return: RBF curves for each component.
+        :rtype: dict[str, NDArray[numpy.float64]]
+        :raises ElisaOperationInputError: If the velocity grid is invalid.
+        """
+        velocity_grid = rbf_point.validate_velocity_grid(kwargs["velocity_grid"])
+        rbf_kwargs = dict(kwargs)
+        rbf_kwargs["velocity_grid"] = velocity_grid
+        curve_fn = c_router.resolve_curve_method(self, curve=CurveType.RBF)
+        rbf_kwargs = rv_utils.include_passband_data_to_kwargs(**rbf_kwargs)
+        return curve_fn(**rbf_kwargs)
+
+    def _compute_circular_synchronous_rbf_curve(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
+        return rbf_curves.compute_circular_synchronous_rbf_curve(self, **kwargs)
+
+    def _compute_circular_spotty_asynchronous_rbf_curve(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
+        return rbf_curves.compute_circular_spotty_asynchronous_rbf_curve(self, **kwargs)
+
+    def _compute_circular_pulsating_rbf_curve(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
+        return rbf_curves.compute_circular_pulsating_rbf_curve(self, **kwargs)
+
+    def _compute_eccentric_spotty_rbf_curve(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
+        return rbf_curves.compute_eccentric_spotty_rbf_curve(self, **kwargs)
+
+    def _compute_eccentric_rbf_curve_no_spots(self, **kwargs: Any) -> dict[str, NDArray[np.float64]]:
+        return rbf_curves.compute_eccentric_rbf_curve_no_spots(self, **kwargs)
