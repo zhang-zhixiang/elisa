@@ -4,6 +4,14 @@ elisa.base.curves package
 Submodules
 ----------
 
+elisa.base.curves.rbf module
+----------------------------
+
+.. automodule:: elisa.base.curves.rbf
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 elisa.base.curves.rv\_point module
 ----------------------------------
 

@@ -394,6 +394,39 @@ The return values:
 This provides a complete minimal workflow: define the system, instantiate the observer, and generate synthetic light curves.
 
 
+### Calculating a Rotational Broadening Function
+
+The same `Observer` instance can produce rotational broadening functions (RBFs), i.e. the
+flux-weighted distribution of line-of-sight velocities of the visible surface elements, smoothed
+by a local Gaussian kernel. The velocity grid is controlled by three parameters only:
+
+```python
+phases, velocity_grid, rbf = o.observe.rbf(
+    from_phase=-0.2,
+    to_phase=0.2,
+    phase_step=0.01,
+    v_start=-300,
+    v_stop=300,
+    v_step=1.0,
+)
+```
+
+- `v_start`, `v_stop`, `v_step` are interpreted as km/s when passed as plain numbers; astropy
+  quantities are converted to m/s.
+- `velocity_grid` is returned in m/s.
+- `rbf` maps `primary`/`secondary` to arrays of shape `(n_phases, n_velocity_bins)`.
+- No normalization is applied: the integral over velocity is the total visible flux of the
+  component.
+- The velocity grid has to cover the line-of-sight velocities of both components. If it does not,
+  a `RBFGridCoverageWarning` is emitted and the integral of the returned RBF is smaller than the
+  total visible flux (part of the profile falls outside the grid).
+- The numerical kernel can be tuned in the `[rbf]` configuration section (`mesh_smoothing`,
+  `sigma_smoothing_passes`, `grid_tolerance`); see `src/elisa/conf/elisa_conf_docs.ini`.
+
+The implementation currently uses a local Gaussian kernel only; it does not expose a `method`
+selector.
+
+
 ## Visualization
 
 ELISa includes a built-in visualization interface for convenient inspection of model results.

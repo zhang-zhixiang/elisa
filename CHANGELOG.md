@@ -13,6 +13,15 @@ Planned work is tracked in the [roadmap](ROADMAP.md).
 
 #### Added
 
+- Rotational broadening functions (RBF) via `Observer.rbf` / `Observer.observe.rbf`:
+  the flux-weighted distribution of line-of-sight velocities of the visible surface
+  elements, smoothed by a local Gaussian kernel with a rigid-rotation vertex width.
+  The velocity grid is set with `v_start`/`v_stop`/`v_step` (km/s for plain numbers,
+  astropy quantities are converted to m/s) and returned in m/s. The kernel is
+  configurable through the new `[rbf]` section (`mesh_smoothing`,
+  `sigma_smoothing_passes`, `grid_tolerance`); `RBFGridCoverageWarning` reports
+  velocity grids that truncate a non-negligible fraction of the visible flux.
+
 - Optional `PRESERVE_INPUT_PHASES` / `[computational].preserve_input_phases`
   (default `False`) retains negative phases and elapsed orbital cycles in LC
   fitting, preserving cycle coordinates needed by asynchronous spots and
