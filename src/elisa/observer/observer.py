@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from astropy.units import UnitConversionError
 
 from elisa import settings
 from elisa import umpy as up
 from elisa import units as u
+from elisa.base.curves import rbf as rbf_point
 from elisa.base.error import (
     raise_elisa_not_implemented_error,
     raise_elisa_operation_input_error,
@@ -118,6 +120,42 @@ class Observables:
             times=times,
         )
 
+    def rbf(
+            self,
+            from_phase: Float | None = None,
+            to_phase: Float | None = None,
+            phase_step: Float | None = None,
+            phases: NDArray | None = None,
+            *,
+            v_start: Float | None = -500.0,
+            v_stop: Float | None = 500.0,
+            v_step: Float | None = 1.0,
+            from_time: Float | None = None,
+            to_time: Float | None = None,
+            time_step: Float | None = None,
+            times: NDArray | None = None,
+    ) -> tuple[NDArray, NDArray, dict[str, NDArray]]:
+        """Calculate rotational broadening functions by delegating to the Observer.
+
+        See :meth:`Observer.rbf` for parameter documentation.
+
+        :returns: Tuple containing phases, the velocity grid and RBF curves.
+        :rtype: tuple[NDArray, NDArray, dict[str, NDArray]]
+        """
+        return self.observer.rbf(
+            from_phase,
+            to_phase,
+            phase_step,
+            phases,
+            v_start=v_start,
+            v_stop=v_stop,
+            v_step=v_step,
+            from_time=from_time,
+            to_time=to_time,
+            time_step=time_step,
+            times=times,
+        )
+
 
 class Observer:
     """Observer class for synthetic photometric and spectroscopic observations.
@@ -171,7 +209,7 @@ class Observer:
         self.passband: dict[str, PassbandContainer] = {}
         self.init_passband(passband)
 
-        self._observables = ["lc", "rv"]
+        self._observables = ["lc", "rv", "rbf"]
         self.phases: NDArray | None = None
         self.times: NDArray | None = None
         self.fluxes: dict[str, NDArray] | None = None
@@ -179,6 +217,9 @@ class Observer:
         self._flux_unit = u.W / u.m ** 2
         self.radial_velocities: dict[str, NDArray] = {}
         self.rv_unit: object | None = None
+        self.rbf_curves: dict[str, NDArray] = {}
+        self.rbf_velocity_grid: object | None = None
+        self.rbf_velocity_unit: object = u.m / u.s
         # noinspection PyTypeChecker
         self.zero_points: ZeroPointType = {}
         self._zero_points_source: tuple | None = None
@@ -504,6 +545,119 @@ class Observer:
             }
 
         return self.phases, self.radial_velocities
+
+
+    def rbf(
+            self,
+            from_phase: Float | None = None,
+            to_phase: Float | None = None,
+            phase_step: Float | None = None,
+            phases: NDArray | None = None,
+            *,
+            v_start: Float | None = -500.0,
+            v_stop: Float | None = 500.0,
+            v_step: Float | None = 1.0,
+            from_time: Float | None = None,
+            to_time: Float | None = None,
+            time_step: Float | None = None,
+            times: NDArray | None = None,
+    ) -> tuple[NDArray, NDArray, dict[str, NDArray]]:
+        """Calculate synthetic rotational broadening functions.
+
+        The rotational broadening function (RBF) is the flux-weighted
+        distribution of line-of-sight velocities of the visible surface
+        elements, smoothed by a local Gaussian kernel. The velocity grid is
+        built from ``v_start``, ``v_stop`` and ``v_step``; plain numbers are
+        interpreted as km/s, while astropy quantities are converted to m/s.
+        The returned grid is expressed in :attr:`rbf_velocity_unit` (m/s).
+
+        No normalization is applied: the integral of the RBF over velocity is
+        the total visible flux of the corresponding component.
+
+        :param from_phase: Starting phase of the observation. Defaults to None.
+        :type from_phase: Float | None
+        :param to_phase: End phase of the observation. Defaults to None.
+        :type to_phase: Float | None
+        :param phase_step: Phase increment of the observations. Defaults to None.
+        :type phase_step: Float | None
+        :param phases: Array of phases at which to perform observations. If provided,
+            from_phase, to_phase, and phase_step are ignored. Defaults to None.
+        :type phases: NDArray | None
+        :param v_start: Start of the velocity grid (km/s for plain numbers).
+            Defaults to -500.
+        :type v_start: Float | None
+        :param v_stop: End of the velocity grid (excluded). Defaults to 500.
+        :type v_stop: Float | None
+        :param v_step: Velocity step of the grid. Defaults to 1.
+        :type v_step: Float | None
+        :param from_time: Starting time of the observation. Defaults to None.
+        :type from_time: Float | None
+        :param to_time: End time of the observation. Defaults to None.
+        :type to_time: Float | None
+        :param time_step: Time increment of the observations. Defaults to None.
+        :type time_step: Float | None
+        :param times: Array of times at which to perform observations. If provided,
+            from_time, to_time, and time_step are ignored. Defaults to None.
+        :type times: NDArray | None
+        :returns: Tuple containing phases, the velocity grid and RBF curves.
+        :rtype: tuple[NDArray, NDArray, dict[str, NDArray]]
+        :raises ElisaNotImplementedError: If the observed system does not support
+            RBF curves.
+        :raises ElisaOperationInputError: If the velocity grid is invalid.
+        """
+        if not hasattr(self._system, "compute_rbf"):
+            raise_elisa_not_implemented_error(
+                "RBF curves are implemented only for BinarySystem observations",
+            )
+
+        phases = self.manage_time_series(
+            from_phase,
+            to_phase,
+            phase_step,
+            phases,
+            from_time,
+            to_time,
+            time_step,
+            times,
+        )
+        base_phases, base_phases_to_origin = self.phase_interval_reduce(phases)
+
+        def _to_ms(value: Float | None, name: str) -> float:
+            if value is None:
+                raise_elisa_operation_input_error(f"Parameter `{name}` must be provided")
+            if hasattr(value, "to_value"):
+                try:
+                    return float(value.to_value(self.rbf_velocity_unit))
+                except UnitConversionError as exc:
+                    raise_elisa_operation_input_error(
+                        f"Parameter `{name}` must have velocity units",
+                        exc,
+                    )
+            km_per_s = (1.0 * u.km / u.s).to_value(self.rbf_velocity_unit)
+            return float(value) * float(km_per_s)
+
+        v0 = _to_ms(v_start, "v_start")
+        v1 = _to_ms(v_stop, "v_stop")
+        dv = _to_ms(v_step, "v_step")
+        if dv <= 0.0:
+            raise_elisa_operation_input_error("`v_step` must be positive")
+        if v1 <= v0:
+            raise_elisa_operation_input_error("`v_stop` must be greater than `v_start`")
+
+        velocity_grid = np.arange(v0, v1, dv, dtype=np.float64)
+        velocity_grid = rbf_point.validate_velocity_grid(velocity_grid)
+
+        self.rbf_curves = self._system.compute_rbf(
+            velocity_grid=velocity_grid,
+            phases=base_phases,
+            position_method=self._system.get_positions_method(),
+        )
+        for key in self.rbf_curves:
+            self.rbf_curves[key] = np.asarray(self.rbf_curves[key])[base_phases_to_origin]
+
+        self.phases = phases + self._system.phase_shift
+        self.rbf_velocity_grid = velocity_grid * self.rbf_velocity_unit
+        return self.phases, self.rbf_velocity_grid, self.rbf_curves
 
     def phase_interval_reduce(  # noqa: PLR0911 - system-specific returns plus a NoReturn helper fallback
         self,
